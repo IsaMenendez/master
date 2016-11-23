@@ -1,0 +1,83 @@
+---
+title: "Actividad_colaborativa"
+output:
+  html_document: default
+  pdf_document: default
+
+---
+<style>
+  body {background-color:lightgray}
+</style>
+```{r, echo=TRUE, results='asis', message=FALSE, warning=FALSE, error=FALSE}
+
+```
+
+## <span style="color:red">Introducción</span>
+Dado que mis compañeros ya han convertido el messy dataset de ejemplo en un tidy dataset, me he puesto a buscar por internet posibles datasets a los que realizar algún proceso de limpieza diferente a los ya propuestos. 
+Como resultado de esta busqueda me he encontrado con un error frecuente en los datos relativos a precios ya que muchas veces vienen con el simbolo de la moneda delante, por ejemplo $9.99. Por lo tanto haciendo uso de la imaginación he decidido hacer un par de operaciones sobre estos datos, para ello he creado un dataset de ejemplo, que se muestra a continuación:
+
+
+```{r, echo=TRUE,  message=FALSE, warning=FALSE, error=FALSE}
+dataset<-read.csv(paste(getwd(),"dataset_colaborativa.csv", sep="/"))
+head(dataset)
+```
+
+
+## <span style="color:red">Problema</span>
+Salta a la vista que los precios estan en diferentes monedas y además llevan el simbolo asociado a la moneda en la que están represtados. Así que para tener un dataset con el cual poder trabajar, se procede a quitar el simbolo de la moneda en la que actualmente se encuentra la cantidad, y además a pasar todos los precios a libras esterlinas. Para ello se utiliza un dataset con el cambio actual de monedas.
+
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE, error=FALSE }
+TipoCambioEuro<-read.csv(paste(getwd(),"TipoCambioEuro.csv", sep="/"))
+head(TipoCambioEuro)
+tail(TipoCambioEuro)
+```
+En el dataset está el cambio de las monedas que necesitamos del mes pasado, no he encontrado un csv con el valor del día de hoy, pero dado que es una prueba conceptual nos resulta igual de útil este dataset.
+
+Pero lo primero que necesitamos, es tener los valores númericos para poder operar con ellos. Para esto nos creamos dos nuevas columnas una llamada euro que tiene true en caso de que el valor del precio este en euros, y lo mismo para la columna dolar
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE, error=FALSE }
+#dataset$euro<-grepl("\\€",dataset$precio)
+dataset$dolar<-grepl("\\$",dataset$precio)
+dataset
+```
+Despues eliminamos los simbolos del dolar y el euro. Y pasamos a numerica la columna del precio.
+```{r, echo=TRUE,  message=FALSE, warning=FALSE, error=FALSE }
+dataset$precio<-sub("\\$","",dataset$precio)
+#dataset$precio<-sub("\\€","",dataset$precio)
+
+class(dataset$precio)
+dataset$precio<-as.numeric(dataset$precio)
+class(dataset$precio)
+dataset
+
+
+```
+LLegados a este punto me he dado cuenta de que por algún motivo si ejecuto el código desde Rmarkdown no me reconoce el simbolo del €, pero sin embargo si lo ejecuto desde la consola funciona perfectamente, creo que es un problema del tipo de codificación que utiliza Rmarkdown, me lo apunto para mirarlo, puesto que me intriga bastante saber la causa. Aunque he de decir que ya probe a guardarlo con todo tipo de codificación posible, y no he conseguido nada.
+
+El siguiente paso, como ya habia adelantado es el de cambiar el valor de los precios que estaban en dolares y ponerlos a euros.
+
+Para ello tomamos el último valor del dataset TipoCambioEuro de la columna Dolares_de_Estados_Unidos
+
+
+```{r, echo=TRUE,  message=FALSE, warning=FALSE, error=FALSE}
+cambio<-tail(TipoCambioEuro$Dolares_de_Estados_Unidos, n=1L)
+cambio
+```
+
+Y luego aplicamos la condicion de que si en la columna que hemos creado llamada dolar el valor es TRUE sobre la columna de valor aplicamos la conversion y si no es así lo dejamos como estaba.
+```{r, echo=TRUE,  message=FALSE, warning=FALSE, error=FALSE}
+dataset$valor<- ifelse(dataset$dolar ==TRUE, dataset$precio/cambio, dataset$precio)
+```
+Y de esta forma tenemos en la columna valor el precio de los productos en todos los casos a euros, pese a que mi idea principal era pasar todos los precios a libras, yo creo que como ejemplo conceptual esta bien.
+Y si mostramos el dataset actual se puede apreciar a simple vista como los precios que ya estaban en euros mantienen su valor en la columna nueva que hemos creado y como los que estaban en dolares ahora han sido convertidos a euros.
+```{r, echo=TRUE,  message=FALSE, warning=FALSE, error=FALSE}
+dataset
+```
+Y ya para finalizar como habitualmente solo se utilizan dos cifras en los decimales redondeamos la columna que hemos creado
+
+
+```{r, echo=TRUE,  message=FALSE, warning=FALSE, error=FALSE}
+dataset$valor<-round(dataset$valor, 2)
+dataset
+```
