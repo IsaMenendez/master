@@ -1,0 +1,247 @@
+---
+title: "Tarea sesion 3"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Carga de datos
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE}
+if(! "mlbench" %in% installed.packages()) install.packages("mlbench", depend = TRUE)
+if(! "caret" %in% installed.packages()) install.packages("caret", depend = TRUE)
+if(! "ROCR" %in% installed.packages()) install.packages("ROCR", depend = TRUE)
+if(! "dplyr" %in% installed.packages()) install.packages("dplyr", depend = TRUE)
+if(! "e1071" %in% installed.packages()) install.packages("e1071", depend = TRUE)
+if(! "corrplot" %in% installed.packages()) install.packages("corrplot", depend = TRUE)
+if(! "partykit" %in% installed.packages()) install.packages("partykit", depend = TRUE)
+if(! "rpart" %in% installed.packages()) install.packages("rpart", depend = TRUE)
+if(! "randomForest" %in% installed.packages()) install.packages("randomForest", depend = TRUE)
+if(! "arules" %in% installed.packages()) install.packages("arules", depend = TRUE)
+if(! "arulesViz" %in% installed.packages()) install.packages("arulesViz", depend = TRUE)
+if(! "dplyr" %in% installed.packages()) install.packages("dplyr", depend = TRUE)
+if(! "cluster" %in% installed.packages()) install.packages("cluster", depend = TRUE)
+#if("TraMineR" %in% installed.packages()) install.packages("TraMineR", dependend=TRUE)
+if(! "plotrix" %in% installed.packages()) install.packages("plotrix", depend = TRUE)
+
+
+library(TraMineR)
+library(knitr)
+library(dplyr)
+library(cluster)
+library(arules)
+library(arulesViz)
+library(gridExtra) 
+library(lattice)
+library(mlbench)
+library(caret)
+library(ROCR)
+library(e1071)
+library(corrplot)
+library(partykit)
+library(rpart)
+library(randomForest)
+library("plotrix")
+```
+
+Primero cargamos los datos y los evaluamos
+
+```{r}
+dataset=read.table("student-por.csv", sep=";", header=TRUE)
+names(dataset)
+#head(dataset)
+#summary(dataset)
+```
+Hay dos variables que me parecen muy influyentes a la hora de predecir la nota final de un alumno, estas son el trabajo de la madre y del padre, pero tal y como vemos hay muchas muestras que como trabajo ponen otros, por lo tanto podríamos descartarlas puesto que necesitariamos mas expecificaciones sobre lo que hay 
+```{r}
+#primero evaluamos la variable target
+#summary(dataset$G3)
+#prop.table(table(dataset$G3))
+dataset$aprueba <- ifelse(dataset$G3 >=10, 1, 0)
+```
+```{r}
+#vemos el porcentaje de aprobados (1) y suspensos (0) 
+prop.table(table(dataset$aprueba))
+table(dataset$G3)
+```
+
+```{r echo=FALSE}
+dataset$aprueba <- ifelse(dataset$G3 >=10, 1, 0)
+#otra opcion sería dividir las notas en 4 subconjuntos
+#dataset$suspenso <- ifelse(dataset$G3 <=10, 1, 0)
+#dataset$aprobado <- ifelse(dataset$G3 >= 10 && dataset$G3 < 13, 1, 0)
+#dataset$notable <- ifelse(dataset$G3 >= 13 && dataset$G3 < 16, 1, 0) 
+#dataset$sobresaliente <- ifelse(dataset$G3 >= 16 && dataset$G3 <20, 1, 0) 
+
+```
+
+
+Realizamos una matriz de correlación
+De donde ya podemos concluir que las notas del segundo y tercer cuatrimestre están más correladas entre sí, que las del primer y tercer cuatrimestre. Y que a la vez las notas de primer cuatrimestre y del segundo estan muy correladas entre si, por lo tanto podríamos eliminar de nuestro dataset las notas G1 puesto que no aportarían nada nuevo al modelo.
+
+
+```{r}
+#Calculamos la matriz de correlacion con todas las variables numericas
+
+MC<- cor(dataset[, c("absences", "Medu", "Fedu", "freetime", "studytime", "failures", "G1", "G2", "G3", "aprueba")])
+MC
+```
+
+
+
+
+##Clustering jerárquico
+
+```{r}
+
+dataset.mod<-cbind(dataset$G2, dataset$Medu, dataset$Fedu, dataset$studytime, dataset$fretime)
+#voy a realizar mi modelo solo con las variables G2, Medu, Fedu y studytime
+#head(dataset.mod)
+
+set.seed(234)
+hc.clust <- hclust(dist(dataset.mod), method="ave")
+plot(hc.clust, hang = -1, labels= dataset$G3)
+
+rect.hclust(hc.clust,k=2)
+
+#cutree(hc.clust, k=2)
+
+```
+En el clustering jerárquico no podemos apreciar nada, salvo que la mayor division esta en dos grupos, dada la naturaleza de los datos me aventuraría a decir que el grupo pequeño es el de los alumnos que obtienen un 0 o 1, y luego estarían el resto
+
+
+##Kmeans
+
+```{r}
+dataset.mod<-cbind( dataset %>% select(absences),dataset %>% select(Medu), dataset %>% select(studytime), dataset %>% select(G2) )
+#voy a realizar mi modelo solo con las variables G2, Medu, Fedu y studytime
+#head(dataset.mod)
+#aplicamos el clustering con K-means, para ello primero buscamos por el metodo de Elbow el numero necesario de clusters finales
+mydata <- dataset.mod
+wss <- (nrow(mydata)-1)*sum(apply(mydata,2,var))
+for (i in 2:15) wss[i] <- sum(kmeans(mydata,
+                                     centers=i)$withinss)
+plot(1:15, wss, type="b", xlab="Numero de Clusters",
+     ylab="Sumas de cuadrados dentro de los grupos",
+     main="Num de clusters óptimo según Elbow",
+     pch=20, cex=2)
+
+#Se observa que a partir de 4 la variación entre los clusters es muy pequeña, por eso aplicamos Kmeans con k=4
+set.seed(1234)
+kmeans.clust <- kmeans(dataset.mod, 4)
+#kmeans.clust
+#como información relevante tenemos
+#el numero de elementos de cada cluster en este caso 197, 128, 179 y 145
+#a que cluster pertenece cada muestra
+#comparamos los resultados de la clusterizacion con las notas iniciales
+table(dataset$G3, kmeans.clust$cluster)
+```
+Como ya habiamos observado al principio en el número de clusters optimo el mayor salto se producia para K=2 desde mi punto de vista esto sería el caso de aprobados y suspensos, ya que si observamos el grupo 4 es el que recoge todos los suspensos, el grupo 2 sería el que tendría la nota más alta, y luego estarían el grupo 1 y 3, que la nota media difiere un poco. 
+
+
+```{r}
+radial.plot(kmeans.clust$centers[4,],
+            labels=names(kmeans.clust$centers[1,]),
+            rp.type="s",
+            radial.lim=c(0,10),
+            point.symbols=13,
+            point.col="red",
+            mar = c(2,1,5,2))
+
+dataset.final<- cbind(dataset, cluster_id=kmeans.clust$cluster)
+plot(dataset.final$cluster_id, dataset.final$G3)
+```
+
+Parece lógico pensar que si tienes notas de 0 a 20, y quieres dividir el conjunto en cuatro subconjuntos, que estos fuesen de 0 a 5 el primero de 5 a 10 el segundo y así. Pero claro, como ya veíamos al principio si dividimos nuestro conjunto en esos cuatro grupos el porcentaje de personas que tienen una nota de 0 a 5 es muy baja, por eso nos salen estos cuatro conjuntos en los que como vemos el grosor del grupo esta en las notas de entre 10 y 15.
+
+
+##Regresión líneal
+
+
+Usamos caret para hacer el modelo de regresión lineal
+```{r}
+set.seed(234)
+index.G3 <- createDataPartition(dataset$G3, p=0.7, list=F)
+train.G3<- dataset[index.G3,]
+test.G3<- dataset[-index.G3,]
+#prop.table(table(train.G3$sex))
+#prop.table(table(train.G3$Medu))
+#prop.table(table(train.G3$Fedu))
+#prop.table(table(train.G3$G2))
+fitControl <- trainControl(method="cv",repeats=10)
+indiceG3 = which("G3" == names(dataset))
+lm.model.caret <- train(x=train.G3[,-indiceG3], y=train.G3$G3, method = "lm", trControl=fitControl)
+#print(lm.model.caret)
+#summary(lm.model.caret)
+#summary(lm.model.caret$finalModel)
+
+lm.model.caret.predict <- predict(lm.model.caret$finalModel, newdata = test.G3)
+
+
+#cor(lm.model.caret.predict, test.G3$G3)
+#print(head(lm.model.caret.predict))
+
+#rse.test<-sqrt(sum(lm.model.caret.predict-test.G3$G3)^2)/(dim(test.G3)[1]-2)
+
+test.values.lm <- data.frame(obs=test.G3$G3, pred=lm.model.caret.predict)
+summary(test.values.lm)
+defaultSummary(test.values.lm)
+
+tunegrid <- expand.grid(mtry=c(1))
+
+rf.reg.model <- train(G3 ~ G2, data=train.G3, method="rf", tuneGrid =tunegrid, trControl=fitControl)
+#print(rf.reg.model)
+rf.reg.model.predict <- predict(rf.reg.model$finalModel, newdata=test.G3)
+#print(head(rf.reg.model.predict))
+test_values_rf<- data.frame(obs=test.G3$G3, pred=rf.reg.model.predict)
+#defaultSummary(test_values_rf)
+reg.models <-list(lm.model.caret, rf.reg.model)
+compar.reg.models <- resamples(reg.models)
+summary(compar.reg.models)
+```
+
+##Arboles de decisión
+
+```{r}
+indiceG3 = which("aprueba" == names(train.G3))
+indiceG2 = which("G2" == names(train.G3))
+indiceG1 = which("G1" == names(train.G3))
+train.G3.2<-train.G3[,-indiceG3]
+train.G3.2<-train.G3.2[,-indiceG2]
+train.G3.2<-train.G3.2[,-indiceG1]
+
+ctree.model <-ctree(G3 ~ ., data=train.G3.2)
+#print(ctree.model)
+
+plot(ctree.model)
+```
+
+Vemos que los alumnos que faltan a clase son los que menos nota obtienen, así como que los que más nota obtienen son los que no tienen faltas de asistencia, van al colegio Gabriel Pereira, no necesitan un apoyo educativo y desean recibir educación superior.
+
+Tal vez sería más intuitivo realizar el modelo intentando predecir si aprueban o no.
+```{r}
+test.G3.pred <-predict(ctree.model, newdata=test.G3)
+table(test.G3.pred, test.G3$G3)
+```
+Tal y como ya hemos visto se representan las columnas como el valor real y las filas como la predicción.
+
+
+No podemos comparar el resultado de los diferentes modelos directamente, ya que en cada caso se han usado unas variables diferentes para predecir y lógicamente esto influye en el resultado. Ya que en el modelo en el que usamos G2 para predecir es más exacto debido a que esta variable esta altamente correlada con nuestra variable target.
+En el caso del arbol de decisión he quitado la variable G2 puesto que el resultado final era muy poco visual, vemos que es un buen modelo para variables con factores pequeños, como puede ser el trabajo de los padres que es un factor que puede tomar 4 valores. 
+
+Como conclusión final, esta claro que R es una gran herramienta con infinidad de opciones, ya que tienes librerias para todas las cosas que quieras hacer, esto es una gran ventaja, pero tambien un gran inconveniente puesto que cuando estas empezando a usar R puede resultar un poco lío encontrar lo que buscas. Incluso a la hora de aplicar un modelo supervisado o no supervisado tienes un montón de opciones y parametros que puedes configurar.
+
+
+
+```{r}
+
+```
+
+
+
+
+
+
+
